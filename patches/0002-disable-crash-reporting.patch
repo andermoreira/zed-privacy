@@ -1,0 +1,50 @@
+From: Zed Privacy Maintainers <privacy@zed-privacy.local>
+Subject: [PATCH 2/3] Disable remote crash reporting and minidump uploads
+
+Set MINIDUMP_ENDPOINT statically to None and disable background tasks
+attempting to upload previous crash dumps and build timings. Crash dumps
+remain purely local for the user's manual debugging.
+
+---
+ crates/client/src/telemetry.rs | 6 +-----
+ crates/zed/src/reliability.rs  | 8 +-------
+ 2 files changed, 2 insertions(+), 12 deletions(-)
+
+diff --git a/crates/client/src/telemetry.rs b/crates/client/src/telemetry.rs
+index 0f7ee31..c985a1f 100644
+--- a/crates/client/src/telemetry.rs
++++ b/crates/client/src/telemetry.rs
+@@ -89,11 +89,7 @@ static ZED_CLIENT_CHECKSUM_SEED: LazyLock<Option<Vec<u8>>> = LazyLock::new(|| {
+         })
+ });
+ 
+-pub static MINIDUMP_ENDPOINT: LazyLock<Option<String>> = LazyLock::new(|| {
+-    option_env!("ZED_MINIDUMP_ENDPOINT")
+-        .map(str::to_string)
+-        .or_else(|| env::var("ZED_MINIDUMP_ENDPOINT").ok())
+-});
++pub static MINIDUMP_ENDPOINT: LazyLock<Option<String>> = LazyLock::new(|| None);
+ 
+ static DOTNET_PROJECT_FILES_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+     Regex::new(r"^(global\.json|Directory\.Build\.props|.*\.(csproj|fsproj|vbproj|sln))$").unwrap()
+diff --git a/crates/zed/src/reliability.rs b/crates/zed/src/reliability.rs
+index b313f8c..7dfb642 100644
+--- a/crates/zed/src/reliability.rs
++++ b/crates/zed/src/reliability.rs
+@@ -44,13 +44,7 @@ pub fn init(client: Arc<Client>, cx: &mut App) {
+     })
+     .detach();
+ 
+-    if client.telemetry().diagnostics_enabled() {
+-        let client = client.clone();
+-        cx.background_spawn(async move {
+-            upload_previous_minidumps(client).await.warn_on_err();
+-        })
+-        .detach()
+-    }
++    // Privacy: Remote minidump upload task disabled.
+ 
+     cx.observe_new(move |project: &mut Project, _, cx| {
+         let client = client.clone();
+-- 
+2.54.0

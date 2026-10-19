@@ -1,0 +1,96 @@
+name: Build Privacy-First Zed Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      zed_tag:
+        description: 'Zed Upstream Tag to build (e.g. v1.9.0)'
+        required: true
+        default: 'v1.9.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Zed (${{ matrix.os }} - ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            arch: aarch64
+            runner: macos-14
+            target: aarch64-apple-darwin
+          - os: macos
+            arch: x86_64
+            runner: macos-13
+            target: x86_64-apple-darwin
+          - os: linux
+            arch: x86_64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+
+    steps:
+      - name: Checkout Zed Privacy repo
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libfontconfig1-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libvulkan-dev \
+            libgl1-mesa-dev
+
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .zed-upstream/target
+          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('patches/**') }}
+          restore-keys: |
+            ${{ matrix.os }}-${{ matrix.arch }}-cargo-
+
+      - name: Run Build Script (Clone, Patch & Audit)
+        run: |
+          ZED_TAG="${{ github.event.inputs.zed_tag || 'v1.9.0' }}"
+          ./scripts/build.sh --tag "${ZED_TAG}" --skip-build
+
+      - name: Compile Release Binary
+        run: |
+          cd .zed-upstream
+          cargo build --release --target ${{ matrix.target }} --package zed
+
+      - name: Package Binary Artifact
+        run: |
+          mkdir -p dist
+          if [ "${{ matrix.os }}" = "macos" ]; then
+            tar -czf dist/zed-privacy-${{ matrix.target }}.tar.gz -C .zed-upstream/target/${{ matrix.target }}/release zed
+          else
+            tar -czf dist/zed-privacy-${{ matrix.target }}.tar.gz -C .zed-upstream/target/${{ matrix.target }}/release zed
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zed-privacy-${{ matrix.target }}
+          path: dist/*

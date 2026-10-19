@@ -1,0 +1,13 @@
+# Build & upstream artifacts
+.zed-upstream/
+target/
+dist/
+
+# Logs & temp
+*.log
+*.dmp
+*.json.corrupted
+
+# OS files
+.DS_Store
+Thumbs.db

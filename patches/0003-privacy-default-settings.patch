@@ -1,0 +1,37 @@
+From: Zed Privacy Maintainers <privacy@zed-privacy.local>
+Subject: [PATCH 3/3] Configure privacy-first default settings
+
+Disable telemetry metrics, diagnostics, and auto_update by default in
+assets/settings/default.json.
+
+---
+ assets/settings/default.json | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/assets/settings/default.json b/assets/settings/default.json
+index 9bb7d05..00623b3 100644
+--- a/assets/settings/default.json
++++ b/assets/settings/default.json
+@@ -1518,9 +1518,9 @@
+   // Control what info is collected by Zed.
+   "telemetry": {
+     // Send debug info like crash reports.
+-    "diagnostics": true,
++    "diagnostics": false,
+     // Send anonymized usage data like what languages you're using Zed with.
+-    "metrics": true,
++    "metrics": false,
+     // Allow sending requests to Anthropic models that cannot be offered with
+     // Zero Data Retention
+     "anthropic_retention": false,
+@@ -1531,7 +1531,7 @@
+   "disable_ai": false,
+   // Automatically update Zed. This setting may be ignored on Linux if
+   // installed through a package manager.
+-  "auto_update": true,
++  "auto_update": false,
+   // How to render LSP `textDocument/documentColor` colors in the editor.
+   //
+   // Possible values:
+-- 
+2.54.0
