@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Zed Privacy - Reproducible Build Script
+# Muted - Build Script
 # Clones upstream Zed, applies privacy-first patches, audits, and builds.
 
 UPSTREAM_REPO="https://github.com/zed-industries/zed.git"
@@ -22,12 +22,15 @@ usage() {
     echo "  --skip-build      Only clone, apply patches, and audit (skips cargo build)"
     echo "  --clean           Remove existing .zed-upstream directory before starting"
     echo "  --help            Show this help message"
-    exit 0
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tag)
+            if [[ $# -lt 2 || -z "$2" ]]; then
+                echo "❌ Error: --tag requires a value." >&2
+                exit 2
+            fi
             TARGET_TAG="$2"
             shift 2
             ;;
@@ -41,16 +44,23 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             usage
+            exit 0
             ;;
         *)
-            echo "Unknown option: $1"
-            usage
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 2
             ;;
     esac
 done
 
+if [[ ! "${TARGET_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+    echo "❌ Error: Invalid tag '${TARGET_TAG}' (expected e.g. v1.9.0)." >&2
+    exit 2
+fi
+
 echo "=========================================================="
-echo "          Zed Privacy - Reproducible Build System         "
+echo "                 Muted - Build System                     "
 echo "=========================================================="
 echo "Target Tag:    ${TARGET_TAG}"
 echo "Skip Build:    ${SKIP_BUILD}"
@@ -86,11 +96,9 @@ if [[ ! -d "${UPSTREAM_DIR}/.git" ]]; then
     git clone --depth 1 --branch "${TARGET_TAG}" "${UPSTREAM_REPO}" "${UPSTREAM_DIR}"
 else
     echo "🔄 Updating existing upstream repository..."
-    cd "${UPSTREAM_DIR}"
-    git fetch --depth 1 origin tag "${TARGET_TAG}" || true
-    git checkout -f "${TARGET_TAG}"
-    git clean -fd
-    cd "${ROOT_DIR}"
+    if ! git -C "${UPSTREAM_DIR}" rev-parse -q --verify "refs/tags/${TARGET_TAG}" >/dev/null; then
+        git -C "${UPSTREAM_DIR}" fetch --depth 1 origin tag "${TARGET_TAG}"
+    fi
 fi
 
 # Apply patches
@@ -103,17 +111,11 @@ for patch in "${PATCHES_DIR}"/*.patch; do
     if [[ -f "$patch" ]]; then
         patch_name="$(basename "$patch")"
         echo "   -> Applying patch: ${patch_name}"
-        if git apply --check "$patch" 2>/dev/null; then
-            git apply "$patch"
-            echo "      ✅ Applied cleanly."
-        else
-            echo "      ⚠️  Trying with 3-way merge fallback..."
-            git apply --3way "$patch" || {
-                echo "❌ Failed to apply patch: ${patch_name}"
-                exit 1
-            }
-            echo "      ✅ Applied with 3-way merge."
+        if ! git apply "$patch"; then
+            echo "❌ Failed to apply patch cleanly: ${patch_name}" >&2
+            exit 1
         fi
+        echo "      ✅ Applied cleanly."
     fi
 done
 
@@ -132,12 +134,12 @@ if [[ "${SKIP_BUILD}" == "true" ]]; then
 fi
 
 echo ""
-echo "⚙️  Compiling Zed release binary with Cargo (this may take several minutes)..."
+echo "⚙️  Compiling Muted release binary with Cargo (this may take several minutes)..."
 cd "${UPSTREAM_DIR}"
 cargo build --release --package zed
 
 echo ""
 echo "=========================================================="
 echo "🎉 Build completed successfully!"
-echo "Binary located at: ${UPSTREAM_DIR}/target/release/zed"
+echo "Binary located at: ${UPSTREAM_DIR}/target/release/muted"
 echo "=========================================================="

@@ -1,6 +1,6 @@
 # Especificação de Privacidade e Threat Model
 
-Este documento formaliza as garantias de privacidade, o modelo de ameaças (*threat model*) e as diretrizes arquiteturais do projeto **Zed Privacy**.
+Este documento formaliza as garantias de privacidade, o modelo de ameaças (*threat model*) e as diretrizes arquiteturais do projeto **Muted**.
 
 ---
 
@@ -19,9 +19,9 @@ Este documento formaliza as garantias de privacidade, o modelo de ameaças (*thr
 
 ### 2.1 Atores e Vetores de Rastreamento
 
-| Vetor de Risco | Como o Zed Original Opera | Impacto de Privacidade | Mitigação do Zed Privacy |
+| Vetor de Risco | Como o Zed Original Opera | Impacto de Privacidade | Mitigação do Muted |
 | :--- | :--- | :--- | :--- |
-| **Identificadores Persistentes de Máquina** | `system_id` (hardware hash) e `installation_id` (gerado por canal). | Permite correlacionar todas as sessões e projetos abertos à mesma máquina física. | Neutralizado. Os campos são omitidos ou zerados; o crate de envio é tornado no-op. |
+| **Identificadores Persistentes de Máquina** | `system_id` (hardware hash) e `installation_id` (gerado por canal). | Permite correlacionar todas as sessões e projetos abertos à mesma máquina física. | Parcial. Sem envio por telemetria (no-op), mas os IDs continuam gerados e persistidos localmente (`crates/zed/src/main.rs`), e `system_id` é enviado no header `x-zed-system-id` à Zed Cloud API quando há login (`crates/cloud_api_client`, verificado em v1.9.0). |
 | **Identificadores de Usuário** | `metrics_id` associado à conta GitHub/Zed Cloud quando autenticado. | Permite vincular métricas de comportamento ao e-mail/usuário real. | Neutralizado. Sem envio de métricas; autenticação na nuvem torna-se estritamente opt-in. |
 | **Eventos de Telemetria** | `crates/telemetry` enfileira cliques, linguagens de programação usadas, extensões ativas e tempos de frame para `/telemetry/events`. | Perfilamento de produtividade, stack tecnológica da empresa e hábitos de trabalho. | Macro `telemetry::event!` e método `send_event` convertidos em no-op completo. Fila nunca inicializada. |
 | **Minidumps e Stacktraces** | `crates/crashes` e `crates/zed/src/reliability.rs` geram minidumps `.dmp` e metadados `.json` com envio remoto para Sentry/Zed. | Dumps de memória podem conter pedaços de código-fonte, nomes de variáveis, tokens em memória ou caminhos de diretórios privados. | Upload remoto desativado (`MINIDUMP_ENDPOINT` forçado para `None`). Arquivos preservados exclusivamente em disco local. |
@@ -37,7 +37,7 @@ O projeto categoriza o isolamento de privacidade em três níveis:
 ### Nível 1: Zero Telemetry (Perfil Padrão)
 - **Escopo:** Desativação total de métricas de uso, telemetria de performance e relatórios remotos de colisão/crash.
 - **Configurações Padrão:** `telemetry.diagnostics = false`, `telemetry.metrics = false`, `auto_update = false`.
-- **Comportamento de Rede:** O editor apenas realiza conexões quando explicitamente solicitadas pelo usuário (por exemplo, instalação de extensões na biblioteca ou download de Language Servers solicitados pelo projeto).
+- **Comportamento de Rede:** Uma instalação nova, ociosa e sem login não faz conexões externas (verificado em runtime no macOS em 2026-10-19; só sondagens loopback de Ollama/LM Studio). Continuam automáticos: download de Language Servers e Node.js ao abrir arquivos, checagem de atualização de extensões já instaladas e login na Zed Cloud quando há credencial salva. Ver `docs/network-audit.md` §2. Continuam automáticos: download de Language Servers e Node.js ao abrir arquivos, checagem de atualização de extensões já instaladas e login na Zed Cloud quando há credencial salva. Ver a matriz em `docs/network-audit.md` §2.
 
 ### Nível 2: De-Clouded (Local-First)
 - **Escopo:** Nível 1 + neutralização visual e funcional dos módulos de autenticação compulsória e presença em nuvem (`zed.dev`).
@@ -51,7 +51,7 @@ O projeto categoriza o isolamento de privacidade em três níveis:
 
 ## 4. Verificação e Auditoria Contínua
 
-Toda release gerada pelo **Zed Privacy** deve passar pelos seguintes critérios de aceitação:
+Toda release gerada pelo **Muted** deve passar pelos seguintes critérios de aceitação:
 1. **Verificação de Compilação de Patches:** Todos os patches modulares aplicam com sucesso sem `fuzz` crítico na tag estável correspondente.
 2. **Inspeção Estática de Símbolos (`scripts/audit_network.py`):** O script de auditoria estática confirma que `MINIDUMP_ENDPOINT` é nulo e `flush_events` não referencia endpoints ativos de telemetria.
-3. **Auditoria de Tráfego em Execução (Wireshark / tcpdump):** Na inicialização e repouso de uma sessão nova, zero pacotes de rede com destino a `*.zed.dev` ou `telemetry.*` devem ser emitidos.
+3. **Auditoria de Tráfego em Execução (`scripts/runtime_network_check.py`):** Na inicialização e repouso de uma sessão nova (Linux, HOME vazio), zero tentativas de conexão não-loopback ou de DNS. Executado no CI a cada build Linux; macOS ainda sem cobertura.

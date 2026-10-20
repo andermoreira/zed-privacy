@@ -1,15 +1,15 @@
 From: Zed Privacy Maintainers <privacy@zed-privacy.local>
-Subject: [PATCH 3/3] Configure privacy-first default settings
+Subject: [PATCH 3/6] Configure privacy-first default settings
 
-Disable telemetry metrics, diagnostics, and auto_update by default in
-assets/settings/default.json.
+Disable telemetry metrics, diagnostics, auto_update and the automatic
+install of the html extension at startup in assets/settings/default.json.
 
 ---
- assets/settings/default.json | 6 +++---
- 1 file changed, 3 insertions(+), 3 deletions(-)
+ assets/settings/default.json | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/assets/settings/default.json b/assets/settings/default.json
-index 9bb7d05..00623b3 100644
+index 9bb7d05..40d7300 100644
 --- a/assets/settings/default.json
 +++ b/assets/settings/default.json
 @@ -1518,9 +1518,9 @@
@@ -33,5 +33,14 @@ index 9bb7d05..00623b3 100644
    // How to render LSP `textDocument/documentColor` colors in the editor.
    //
    // Possible values:
+@@ -2098,7 +2098,7 @@
+   // If you don't want any of these extensions, add this field to your settings
+   // and change the value to `false`.
+   "auto_install_extensions": {
+-    "html": true,
++    "html": false,
+   },
+   // The capabilities granted to extensions.
+   //
 -- 
 2.54.0

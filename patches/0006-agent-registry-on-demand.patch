@@ -1,0 +1,108 @@
+From: Muted Maintainers <privacy@zed-privacy.local>
+Subject: [PATCH 6/6] Fetch the ACP agent registry on demand
+
+Stop AgentRegistryStore::init_global from fetching
+cdn.agentclientprotocol.com at startup. The registry is refreshed when the
+Agent Registry page opens or a configured registry agent is used.
+
+---
+ crates/project/src/agent_registry_store.rs         | 14 +++------
+ .../tests/integration/agent_registry_store.rs      | 33 +++++++++++++++++++++-
+ 2 files changed, 36 insertions(+), 11 deletions(-)
+
+diff --git a/crates/project/src/agent_registry_store.rs b/crates/project/src/agent_registry_store.rs
+index 8cfba22..aea4f67 100644
+--- a/crates/project/src/agent_registry_store.rs
++++ b/crates/project/src/agent_registry_store.rs
+@@ -126,10 +126,10 @@ pub struct AgentRegistryStore {
+ impl AgentRegistryStore {
+     /// Initialize the global AgentRegistryStore.
+     ///
+-    /// This loads the cached registry from disk. If the cache is empty but there
+-    /// are registry agents configured in settings, it will trigger a network fetch.
+-    /// Otherwise, call `refresh()` explicitly when you need fresh data
+-    /// (e.g., when opening the Agent Registry page).
++    /// This loads the cached registry from disk without touching the network.
++    /// Configured registry agents trigger `refresh_if_stale()` from the agent
++    /// server store; otherwise call `refresh()` explicitly when you need fresh
++    /// data (e.g., when opening the Agent Registry page).
+     pub fn init_global(
+         cx: &mut App,
+         fs: Arc<dyn Fs>,
+@@ -142,12 +142,6 @@ impl AgentRegistryStore {
+         let store = cx.new(|cx| Self::new(fs, http_client, cx));
+         cx.set_global(GlobalAgentRegistryStore(store.clone()));
+ 
+-        store.update(cx, |store, cx| {
+-            if store.agents.is_empty() {
+-                store.refresh(cx);
+-            }
+-        });
+-
+         store
+     }
+ 
+diff --git a/crates/project/tests/integration/agent_registry_store.rs b/crates/project/tests/integration/agent_registry_store.rs
+index a9935e6..d606e7d 100644
+--- a/crates/project/tests/integration/agent_registry_store.rs
++++ b/crates/project/tests/integration/agent_registry_store.rs
+@@ -1,4 +1,11 @@
+-use std::{future, sync::Arc, time::Duration};
++use std::{
++    future,
++    sync::{
++        Arc,
++        atomic::{AtomicUsize, Ordering},
++    },
++    time::Duration,
++};
+ 
+ use fs::FakeFs;
+ use gpui::TestAppContext;
+@@ -8,6 +15,28 @@ use serde_json::json;
+ 
+ use crate::init_test;
+ 
++#[gpui::test]
++async fn registry_init_does_not_fetch_without_registry_agents(cx: &mut TestAppContext) {
++    init_test(cx);
++
++    let fs = FakeFs::new(cx.executor());
++    let request_count = Arc::new(AtomicUsize::new(0));
++    let http_client = FakeHttpClient::create({
++        let request_count = request_count.clone();
++        move |_| {
++            request_count.fetch_add(1, Ordering::SeqCst);
++            future::pending::<anyhow::Result<Response<AsyncBody>>>()
++        }
++    }) as Arc<dyn HttpClient>;
++
++    let registry_store =
++        cx.update(|cx| AgentRegistryStore::init_global(cx, fs.clone(), http_client));
++    cx.run_until_parked();
++
++    assert_eq!(request_count.load(Ordering::SeqCst), 0);
++    registry_store.update(cx, |store, _| assert!(!store.is_fetching()));
++}
++
+ #[gpui::test]
+ async fn registry_refresh_times_out_when_fetch_never_completes(cx: &mut TestAppContext) {
+     init_test(cx);
+@@ -19,6 +48,7 @@ async fn registry_refresh_times_out_when_fetch_never_completes(cx: &mut TestAppC
+ 
+     let registry_store =
+         cx.update(|cx| AgentRegistryStore::init_global(cx, fs.clone(), http_client));
++    registry_store.update(cx, |store, cx| store.refresh(cx));
+     cx.run_until_parked();
+ 
+     cx.executor().advance_clock(Duration::from_secs(31));
+@@ -99,6 +129,7 @@ async fn registry_refresh_does_not_block_sequentially_on_hung_icon_downloads(
+ 
+     let registry_store =
+         cx.update(|cx| AgentRegistryStore::init_global(cx, fs.clone(), http_client));
++    registry_store.update(cx, |store, cx| store.refresh(cx));
+     cx.run_until_parked();
+ 
+     cx.executor().advance_clock(Duration::from_secs(11));
+-- 
+2.54.0

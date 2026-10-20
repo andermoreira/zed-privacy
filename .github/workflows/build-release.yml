@@ -1,11 +1,9 @@
-name: Build Privacy-First Zed Release
+name: Build Muted Release
 
 on:
   push:
     tags:
       - 'v*'
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       zed_tag:
@@ -14,11 +12,14 @@ on:
         default: 'v1.9.0'
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  ZED_TAG: ${{ github.event.inputs.zed_tag || github.ref_name }}
 
 jobs:
   build:
-    name: Build Zed (${{ matrix.os }} - ${{ matrix.arch }})
+    name: Build Muted (${{ matrix.os }} - ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -30,7 +31,7 @@ jobs:
             target: aarch64-apple-darwin
           - os: macos
             arch: x86_64
-            runner: macos-13
+            runner: macos-15-intel
             target: x86_64-apple-darwin
           - os: linux
             arch: x86_64
@@ -38,7 +39,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
 
     steps:
-      - name: Checkout Zed Privacy repo
+      - name: Checkout Muted repo
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
@@ -57,7 +58,10 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
             libvulkan-dev \
-            libgl1-mesa-dev
+            libgl1-mesa-dev \
+            mesa-vulkan-drivers \
+            strace \
+            xvfb
 
       - name: Cache Cargo Dependencies
         uses: actions/cache@v4
@@ -66,31 +70,43 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .zed-upstream/target
-          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ hashFiles('patches/**') }}
+          key: ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ env.ZED_TAG }}-${{ hashFiles('patches/**') }}
           restore-keys: |
-            ${{ matrix.os }}-${{ matrix.arch }}-cargo-
+            ${{ matrix.os }}-${{ matrix.arch }}-cargo-${{ env.ZED_TAG }}-
+
+      - name: Run Unit Tests
+        run: python3 -m unittest discover -s tests -v
 
       - name: Run Build Script (Clone, Patch & Audit)
-        run: |
-          ZED_TAG="${{ github.event.inputs.zed_tag || 'v1.9.0' }}"
-          ./scripts/build.sh --tag "${ZED_TAG}" --skip-build
+        run: ./scripts/build.sh --tag "${ZED_TAG}" --skip-build
 
       - name: Compile Release Binary
         run: |
           cd .zed-upstream
           cargo build --release --target ${{ matrix.target }} --package zed
 
+      - name: Runtime Network Check (idle startup, no network)
+        if: matrix.os == 'linux'
+        run: |
+          python3 scripts/runtime_network_check.py \
+            --binary .zed-upstream/target/${{ matrix.target }}/release/muted \
+            --log strace-network.log
+
+      - name: Upload strace Log
+        if: always() && matrix.os == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: strace-network-log
+          path: strace-network.log
+          if-no-files-found: ignore
+
       - name: Package Binary Artifact
         run: |
           mkdir -p dist
-          if [ "${{ matrix.os }}" = "macos" ]; then
-            tar -czf dist/zed-privacy-${{ matrix.target }}.tar.gz -C .zed-upstream/target/${{ matrix.target }}/release zed
-          else
-            tar -czf dist/zed-privacy-${{ matrix.target }}.tar.gz -C .zed-upstream/target/${{ matrix.target }}/release zed
-          fi
+          tar -czf dist/muted-${{ matrix.target }}.tar.gz -C .zed-upstream/target/${{ matrix.target }}/release muted
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zed-privacy-${{ matrix.target }}
+          name: muted-${{ matrix.target }}
           path: dist/*

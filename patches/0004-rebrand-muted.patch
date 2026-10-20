@@ -1,0 +1,101 @@
+From: Zed Privacy Maintainers <privacy@zed-privacy.local>
+Subject: [PATCH 4/6] Rebrand binary and app data as Muted
+
+Rename the main binary to `muted` and set APP_NAME to "Muted" so config,
+data and cache directories never collide with an official Zed install.
+Give the stable macOS bundle its own name, identifier and URL scheme, and
+move the macOS single-instance port range so launching Muted never hands
+the request off to a running Zed.
+
+---
+ crates/paths/src/paths.rs               |  2 +-
+ crates/zed/Cargo.toml                   | 10 +++++-----
+ crates/zed/src/zed/mac_only_instance.rs | 16 ++++++++++------
+ 3 files changed, 16 insertions(+), 12 deletions(-)
+
+diff --git a/crates/paths/src/paths.rs b/crates/paths/src/paths.rs
+index d222bd1..ac34289 100644
+--- a/crates/paths/src/paths.rs
++++ b/crates/paths/src/paths.rs
+@@ -15,7 +15,7 @@ pub const EDITORCONFIG_NAME: &str = ".editorconfig";
+ /// and state directory paths.
+ ///
+ /// Forks should change this to avoid colliding with Zed's user data.
+-pub const APP_NAME: &str = "Zed";
++pub const APP_NAME: &str = "Muted";
+ 
+ /// Lowercased form of [`APP_NAME`], for use in XDG-style paths on
+ /// Linux/FreeBSD and the macOS `~/.config` fallback.
+diff --git a/crates/zed/Cargo.toml b/crates/zed/Cargo.toml
+index e0dbaf5..775eafb 100644
+--- a/crates/zed/Cargo.toml
++++ b/crates/zed/Cargo.toml
+@@ -6,7 +6,7 @@ version = "1.9.0"
+ publish.workspace = true
+ license = "GPL-3.0-or-later"
+ authors = ["Zed Team <hi@zed.dev>"]
+-default-run = "zed"
++default-run = "muted"
+ 
+ [lints]
+ workspace = true
+@@ -54,7 +54,7 @@ visual-tests = [
+ ]
+ 
+ [[bin]]
+-name = "zed"
++name = "muted"
+ path = "src/main.rs"
+ 
+ [[bin]]
+@@ -300,11 +300,11 @@ osx_url_schemes = ["zed"]
+ 
+ [package.metadata.bundle-stable]
+ icon = ["resources/app-icon@2x.png", "resources/app-icon.png"]
+-identifier = "dev.zed.Zed"
+-name = "Zed"
++identifier = "io.github.andermoreira.Muted"
++name = "Muted"
+ osx_minimum_system_version = "10.15.7"
+ osx_info_plist_exts = ["resources/info/*"]
+-osx_url_schemes = ["zed"]
++osx_url_schemes = ["muted"]
+ 
+ [package.metadata.cargo-machete]
+ ignored = ["profiling", "zstd", "tracing"]
+diff --git a/crates/zed/src/zed/mac_only_instance.rs b/crates/zed/src/zed/mac_only_instance.rs
+index b7898fa..25178ea 100644
+--- a/crates/zed/src/zed/mac_only_instance.rs
++++ b/crates/zed/src/zed/mac_only_instance.rs
+@@ -15,6 +15,9 @@ const RECEIVE_TIMEOUT: Duration = Duration::from_millis(35);
+ const SEND_TIMEOUT: Duration = Duration::from_millis(20);
+ const USER_BLOCK: u16 = 100;
+ 
++// Muted: offset the single-instance port range so it never hands off to Zed.
++const MUTED_PORT_OFFSET: u16 = 4000;
++
+ fn address() -> SocketAddr {
+     // These port numbers are offset by the user ID to avoid conflicts between
+     // different users on the same machine. In addition to that the ports for each
+@@ -28,12 +31,13 @@ fn address() -> SocketAddr {
+     // 44338, 44438, and 44538 for the preview, stable, and nightly channels,
+     // respectively. User 502 will use ports 44339, 44439, and 44539 for the preview,
+     // stable, and nightly channels, respectively.
+-    let port = match *release_channel::RELEASE_CHANNEL {
+-        ReleaseChannel::Dev => 43737,
+-        ReleaseChannel::Preview => 43737 + USER_BLOCK,
+-        ReleaseChannel::Stable => 43737 + (2 * USER_BLOCK),
+-        ReleaseChannel::Nightly => 43737 + (3 * USER_BLOCK),
+-    };
++    let port = MUTED_PORT_OFFSET
++        + match *release_channel::RELEASE_CHANNEL {
++            ReleaseChannel::Dev => 43737,
++            ReleaseChannel::Preview => 43737 + USER_BLOCK,
++            ReleaseChannel::Stable => 43737 + (2 * USER_BLOCK),
++            ReleaseChannel::Nightly => 43737 + (3 * USER_BLOCK),
++        };
+     let mut user_port = port;
+     let mut sys = System::new_all();
+     sys.refresh_all();
+-- 
+2.54.0
