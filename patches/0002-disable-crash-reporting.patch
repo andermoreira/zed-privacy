@@ -1,5 +1,5 @@
 From: Zed Privacy Maintainers <privacy@zed-privacy.local>
-Subject: [PATCH 2/3] Disable remote crash reporting and minidump uploads
+Subject: [PATCH 2/6] Disable remote crash reporting and minidump uploads
 
 Set MINIDUMP_ENDPOINT statically to None and disable background tasks
 attempting to upload previous crash dumps and build timings. Crash dumps

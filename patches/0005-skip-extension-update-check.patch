@@ -1,0 +1,81 @@
+From: Muted Maintainers <privacy@zed-privacy.local>
+Subject: [PATCH 5/6] Skip extension update check with no extensions
+
+Return early from fetch_extensions_with_update_available when no installed
+extension is eligible for auto-update, so a fresh install never calls
+api.zed.dev/extensions/updates at startup.
+
+---
+ crates/extension_host/src/extension_host.rs       |  3 ++
+ crates/extension_host/src/extension_store_test.rs | 42 +++++++++++++++++++++++
+ 2 files changed, 45 insertions(+)
+
+diff --git a/crates/extension_host/src/extension_host.rs b/crates/extension_host/src/extension_host.rs
+index b22d175..97788d0 100644
+--- a/crates/extension_host/src/extension_host.rs
++++ b/crates/extension_host/src/extension_host.rs
+@@ -563,6 +563,9 @@ impl ExtensionStore {
+             .map(|(id, _)| id.as_ref())
+             .collect::<Vec<_>>()
+             .join(",");
++        if extension_ids.is_empty() {
++            return Task::ready(Ok(Vec::new()));
++        }
+         let task = self.fetch_extensions_from_api(
+             "/extensions/updates",
+             &[
+diff --git a/crates/extension_host/src/extension_store_test.rs b/crates/extension_host/src/extension_store_test.rs
+index 6868701..16df672 100644
+--- a/crates/extension_host/src/extension_store_test.rs
++++ b/crates/extension_host/src/extension_store_test.rs
+@@ -534,6 +534,48 @@ async fn test_extension_store(cx: &mut TestAppContext) {
+     });
+ }
+ 
++#[gpui::test]
++async fn test_no_update_check_without_installed_extensions(cx: &mut TestAppContext) {
++    init_test(cx);
++
++    let fs = FakeFs::new(cx.executor());
++    fs.insert_tree("/the-extension-dir", json!({ "installed": {} }))
++        .await;
++    let request_count = Arc::new(Mutex::new(0usize));
++    let http_client = FakeHttpClient::create({
++        let request_count = request_count.clone();
++        move |_| {
++            *request_count.lock() += 1;
++            async move {
++                Ok(Response::builder()
++                    .status(404)
++                    .body(Default::default())
++                    .unwrap())
++            }
++        }
++    });
++
++    let proxy = Arc::new(ExtensionHostProxy::new());
++    let node_runtime = NodeRuntime::unavailable();
++    let _store = cx.new(|cx| {
++        ExtensionStore::new(
++            PathBuf::from("/the-extension-dir"),
++            None,
++            proxy,
++            fs.clone(),
++            http_client.clone(),
++            http_client.clone(),
++            None,
++            node_runtime,
++            cx,
++        )
++    });
++    cx.executor().advance_clock(RELOAD_DEBOUNCE_DURATION);
++    cx.executor().run_until_parked();
++
++    assert_eq!(*request_count.lock(), 0);
++}
++
+ #[gpui::test]
+ async fn test_extension_store_with_test_extension(cx: &mut TestAppContext) {
+     init_test(cx);
+-- 
+2.54.0
